@@ -1,3 +1,4 @@
+// file path: src/Utils/messages.ts
 import { Boom } from '@hapi/boom'
 import axios from 'axios'
 import { randomBytes } from 'crypto'
@@ -526,15 +527,112 @@ export const generateWAMessageContent = async (
 				m.pollCreationMessage = pollCreationMessage
 			}
 		}
-	} else if ('sharePhoneNumber' in message) {
+	} else if ('sharePhoneNumber' in message && message.sharePhoneNumber === true) {
 		m.protocolMessage = {
 			type: proto.Message.ProtocolMessage.Type.SHARE_PHONE_NUMBER
 		}
-	} else if ('requestPhoneNumber' in message) {
+	} else if ('requestPhoneNumber' in message && message.requestPhoneNumber === true) {
 		m.requestPhoneNumberMessage = {}
 	} else {
+		// @ts-ignore
+		// TODO: fix this
 		m = await prepareWAMessageMedia(message, options)
 	}
+
+	// we adding logic here to support button messages
+	// take care this piece of code before merge things.
+	if ('buttons' in message && !!message.buttons) {
+		const ButtonType = proto.Message.ButtonsMessage.HeaderType
+
+		const buttonsMessage: proto.Message.IButtonsMessage = {
+			buttons: message.buttons.map(b => ({ ...b, type: proto.Message.ButtonsMessage.Button.Type.RESPONSE }))
+		}
+
+		if ('text' in message) {
+			buttonsMessage.contentText = message.text
+			buttonsMessage.headerType = ButtonType.EMPTY
+		} else {
+			if ('caption' in message) {
+				buttonsMessage.contentText = message.caption
+			}
+
+			const type = Object.keys(m)[0].replace('Message', '').toUpperCase()
+			buttonsMessage.headerType = ButtonType[type]
+
+			Object.assign(buttonsMessage, m)
+		}
+
+		if ('title' in message && !!message.title) {
+			;(buttonsMessage.text = message.title), (buttonsMessage.headerType = ButtonType.TEXT)
+		}
+
+		if ('footer' in message && !!message.footer) {
+			buttonsMessage.footerText = message.footer
+		}
+
+		if ('contextInfo' in message && !!message.contextInfo) {
+			buttonsMessage.contextInfo = message.contextInfo
+		}
+
+		if ('mentions' in message && !!message.mentions) {
+			buttonsMessage.contextInfo = { mentionedJid: message.mentions }
+		}
+
+		m = { documentWithCaptionMessage: { message: { buttonsMessage } } }
+	}
+
+	if ('interactiveButtons' in message && !!message.interactiveButtons) {
+		const interactiveMessage: proto.Message.IInteractiveMessage = {
+			nativeFlowMessage: WAProto.Message.InteractiveMessage.NativeFlowMessage.fromObject({
+				buttons: message.interactiveButtons
+			})
+		}
+
+		if ('text' in message) {
+			interactiveMessage.body = {
+				text: message.text
+			}
+		} else if ('caption' in message) {
+			interactiveMessage.body = {
+				text: message.caption
+			}
+
+			interactiveMessage.header = {
+				title: message.title,
+				subtitle: message.subtitle,
+				hasMediaAttachment: message?.media ?? false
+			}
+
+			Object.assign(interactiveMessage.header, m)
+		}
+
+		if ('footer' in message && !!message.footer) {
+			interactiveMessage.footer = {
+				text: message.footer
+			}
+		}
+
+		if ('title' in message && !!message.title) {
+			interactiveMessage.header = {
+				title: message.title,
+				subtitle: message.subtitle,
+				hasMediaAttachment: message?.media ?? false
+			}
+
+			Object.assign(interactiveMessage.header, m)
+		}
+
+		if ('contextInfo' in message && !!message.contextInfo) {
+			interactiveMessage.contextInfo = message.contextInfo
+		}
+
+		if ('mentions' in message && !!message.mentions) {
+			interactiveMessage.contextInfo = { mentionedJid: message.mentions }
+		}
+
+		m = { interactiveMessage }
+	}
+	// end of modification about button messages
 
 	if ('viewOnce' in message && !!message.viewOnce) {
 		m = { viewOnceMessage: { message: m } }
@@ -946,7 +1044,8 @@ export const assertMediaContent = (content: proto.IMessage | null | undefined) =
 		content?.imageMessage ||
 		content?.videoMessage ||
 		content?.audioMessage ||
-		content?.stickerMessage
+		content?.stickerMessage ||
+		content?.ptvMessage
 	if (!mediaContent) {
 		throw new Boom('given message is not a media message', { statusCode: 400, data: content })
 	}

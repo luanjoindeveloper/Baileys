@@ -1,3 +1,4 @@
+// file path: src/Types/Message.ts
 import { AxiosRequestConfig } from 'axios'
 import type { Readable } from 'stream'
 import type { URL } from 'url'
@@ -162,14 +163,36 @@ export type WASendableProduct = Omit<proto.Message.ProductMessage.IProductSnapsh
 	productImage: WAMediaUpload
 }
 
+type Buttonable = {
+	/** add buttons to the message  */
+	buttons?: proto.Message.ButtonsMessage.IButton[]
+}
+
+type Templatable = {
+	/** add buttons to the message (conflicts with normal buttons)*/
+	templateButtons?: proto.IHydratedTemplateButton[]
+	footer?: string
+}
+
+type Interactiveable = {
+	/** add buttons to the message  */
+	interactiveButtons?: proto.Message.InteractiveMessage.NativeFlowMessage.NativeFlowButton[]
+	title?: string
+	subtitle?: string
+	media?: boolean
+}
+
 export type AnyRegularMessageContent = (
 	| ({
 			text: string
 			linkPreview?: WAUrlInfo | null
 	  } & Mentionable &
 			Contextable &
-			Editable)
-	| AnyMediaMessageContent
+			Editable &
+			Buttonable &
+			Templatable &
+			Interactiveable)
+	| (AnyMediaMessageContent & Buttonable & Templatable & Interactiveable)
 	| ({
 			poll: PollMessageOptions
 	  } & Mentionable &

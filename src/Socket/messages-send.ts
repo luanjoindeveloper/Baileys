@@ -1,3 +1,4 @@
+// file path: src/Socket/messages-send.ts
 import NodeCache from '@cacheable/node-cache'
 import { Boom } from '@hapi/boom'
 import { proto } from '../../WAProto'
@@ -23,6 +24,7 @@ import {
 	extractDeviceJids,
 	generateMessageIDV2,
 	generateWAMessage,
+	getContentType,
 	getStatusCodeForMediaRetry,
 	getUrlFromDirectPath,
 	getWAUploadToServer,
@@ -39,6 +41,7 @@ import {
 	getBinaryNodeChildren,
 	isJidGroup,
 	isJidUser,
+	isLidUser,
 	jidDecode,
 	jidEncode,
 	jidNormalizedUser,
@@ -636,6 +639,61 @@ export const makeMessagesSocket = (config: SocketConfig) => {
 			if (additionalNodes && additionalNodes.length > 0) {
 				;(stanza.content as BinaryNode[]).push(...additionalNodes)
 			}
+
+			// we adding logic here to support button messages
+			// take care this piece of code before merge things.
+			const normalizedMessage = normalizeMessageContent(message)
+			const contentType = getContentType(normalizedMessage)!
+			const isButtonLikeType = ['interactiveMessage', 'buttonsMessage', 'listMessage'].includes(contentType)
+
+			if ((isJidGroup(jid) || isJidUser(jid) || isLidUser(jid)) && isButtonLikeType) {
+				const bizNode: BinaryNode = { tag: 'biz', attrs: {} }
+
+				const containsButtonLikeMsg =
+					message?.viewOnceMessage?.message?.interactiveMessage ||
+					message?.viewOnceMessageV2?.message?.interactiveMessage ||
+					message?.viewOnceMessageV2Extension?.message?.interactiveMessage ||
+					message?.interactiveMessage ||
+					message?.viewOnceMessage?.message?.buttonsMessage ||
+					message?.viewOnceMessageV2?.message?.buttonsMessage ||
+					message?.viewOnceMessageV2Extension?.message?.buttonsMessage ||
+					message?.buttonsMessage ||
+					message?.documentWithCaptionMessage?.message?.buttonsMessage
+
+				const containsListMsg = message?.listMessage
+
+				if (containsButtonLikeMsg) {
+					bizNode.content = [
+						{
+							tag: 'interactive',
+							attrs: {
+								type: 'native_flow',
+								v: '1'
+							},
+							content: [
+								{
+									tag: 'native_flow',
+									attrs: { v: '2', name: 'mixed' }
+								}
+							]
+						}
+					]
+				} else if (containsListMsg) {
+					// list message only support in private chat
+					bizNode.content = [
+						{
+							tag: 'list',
+							attrs: {
+								type: 'product_list',
+								v: '2'
+							}
+						}
+					]
+				}
+
+				;(stanza.content as BinaryNode[]).push(bizNode)
+			}
+			// end of modification about button messages
 
 			logger.debug({ msgId }, `sending message to ${participants.length} devices`)
 
